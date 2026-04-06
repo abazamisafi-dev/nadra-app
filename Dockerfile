@@ -17,7 +17,7 @@ RUN composer install --no-dev --optimize-autoloader
 RUN npm install
 RUN npm run build
 
-RUN cp .env.example .env && php artisan key:generate
+RUN php artisan key:generate --force
 
 EXPOSE 8080
 
