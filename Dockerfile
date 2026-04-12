@@ -1,24 +1,36 @@
-FROM php:8.2-cli
-
-RUN apt-get update && apt-get install -y \
-    libpng-dev libjpeg-dev libfreetype6-dev \
-    zip unzip git curl nodejs npm \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install gd pdo pdo_mysql
-
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-
+# Stage 1 - Build Frontend (Vite)
+FROM node:18 AS frontend
 WORKDIR /app
-COPY . .
-
-RUN composer install --no-dev --optimize-autoloader
-
-# 🔥 THIS IS THE FIX
+COPY package*.json ./
 RUN npm install
+COPY . .
 RUN npm run build
 
-RUN php artisan key:generate --force
+# Stage 2 - Backend (Laravel + PHP + Composer)
+FROM php:8.2-fpm AS backend
 
-EXPOSE 8080
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git curl unzip libpq-dev libonig-dev libzip-dev zip \
+    && docker-php-ext-install pdo pdo_mysql mbstring zip
 
-CMD ["sh", "-c", "php -S 0.0.0.0:${PORT} -t public"]
+# Install Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+WORKDIR /var/www
+
+# Copy app files
+COPY . .
+
+# Copy built frontend from Stage 1
+COPY --from=frontend /app/public/dist ./public/dist
+
+# Install PHP dependencies
+RUN composer install --no-dev --optimize-autoloader
+
+# Laravel setup
+RUN php artisan config:clear && \
+    php artisan route:clear && \
+    php artisan view:clear
+
+CMD ["php-fpm"]
